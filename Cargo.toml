@@ -1,0 +1,35 @@
+[package]
+name    = "dexprobe"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name    = "dexprobe"
+path    = "src/main.rs"
+
+[dependencies]
+# CLI
+clap        = { version = "4", features = ["derive"] }
+
+# Environment / config
+dotenvy     = "0.15"
+
+# APK parsing + zip
+apk         = "0.4"
+dex-parser-rust = "1.3"
+zip         = "2"
+
+# Data serialisation
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+sha2        = "0.10"
+
+# Coloured terminal output
+colored     = "2"
+
+# Error handling
+anyhow      = "1"
+thiserror   = "2"
+phf         = { version = "0.11", features = ["macros"] }
+chrono      = { version = "0.4", default-features = false, features = ["clock"] }
+reqwest     = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
