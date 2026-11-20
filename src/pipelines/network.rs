@@ -68,7 +68,7 @@ fn network_finding(
     finding.score = score;
     finding.location = location.into();
     finding.evidence = evidence.into();
-    finding.redacted_evidence = evidence.into();
+    finding.redacted_evidence = "[REDACTED URL]".into();
     finding.evidence_source = location.into();
     finding
 }
@@ -93,5 +93,27 @@ mod tests {
         let mut findings = Vec::new();
         scan_text(&mut findings, "classes.dex", "example.xyz:8080");
         assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn never_exposes_url_credentials_or_query_values_as_evidence() {
+        let mut findings = Vec::new();
+        scan_text(
+            &mut findings,
+            "assets/config.txt",
+            "http://user:password@example.com/path?token=secret",
+        );
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].redacted_evidence, "[REDACTED URL]");
+        assert!(
+            !serde_json::to_string(&findings[0])
+                .unwrap()
+                .contains("password")
+        );
+        assert!(
+            !serde_json::to_string(&findings[0])
+                .unwrap()
+                .contains("secret")
+        );
     }
 }

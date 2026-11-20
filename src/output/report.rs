@@ -113,6 +113,67 @@ pub fn export_json(
     Ok(())
 }
 
+pub fn export_sarif(findings: &[Finding], meta: &Meta, output_path: &Path) -> anyhow::Result<()> {
+    let results = findings
+        .iter()
+        .map(|finding| {
+            let evidence = redacted_evidence(finding);
+            let message = if evidence.is_empty() {
+                finding.detail.clone()
+            } else {
+                format!("{} Evidence: {evidence}", finding.detail)
+            };
+            let mut result = serde_json::json!({
+                "ruleId": finding.pipeline,
+                "level": match finding.severity.as_str() {
+                    "CRITICAL" | "HIGH" => "error",
+                    "MEDIUM" => "warning",
+                    _ => "note",
+                },
+                "message": { "text": message },
+                "properties": {
+                    "severity": finding.severity,
+                    "score": finding.score,
+                    "confidence": finding.confidence,
+                    "reachability": finding.reachability,
+                    "tags": finding.tags,
+                    "cve_ids": finding.cve_ids,
+                },
+            });
+            if !finding.location.is_empty() {
+                result["locations"] = serde_json::json!([{
+                    "physicalLocation": {
+                        "artifactLocation": { "uri": finding.location }
+                    }
+                }]);
+            }
+            result
+        })
+        .collect::<Vec<_>>();
+    let report = serde_json::json!({
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": { "driver": { "name": meta.tool, "version": meta.version } },
+            "results": results,
+        }],
+    });
+    write_report(output_path, &serde_json::to_vec_pretty(&report)?)?;
+    logger::ok(&format!("SARIF report -> {}", output_path.display()));
+    Ok(())
+}
+
+fn write_report(output_path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let temporary = output_path.with_extension(format!("report.{nonce}.tmp"));
+    std::fs::write(&temporary, bytes)?;
+    std::fs::rename(temporary, output_path)?;
+    Ok(())
+}
+
 fn redacted_evidence(finding: &Finding) -> String {
     if !finding.redacted_evidence.is_empty() {
         finding.redacted_evidence.clone()
@@ -122,10 +183,19 @@ fn redacted_evidence(finding: &Finding) -> String {
 }
 
 fn redact(value: &str) -> String {
-    if value.len() <= 8 {
+    if value.chars().count() <= 8 {
         return "[REDACTED]".to_string();
     }
-    format!("{}…{}", &value[..4], &value[value.len() - 4..])
+    let first = value.chars().take(4).collect::<String>();
+    let last = value
+        .chars()
+        .rev()
+        .take(4)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect::<String>();
+    format!("{first}…{last}")
 }
 
 fn summary(findings: &[Finding]) -> ReportSummary {
@@ -177,8 +247,9 @@ fn pipeline_summaries(findings: &[Finding]) -> Vec<PipelineSummary> {
 
 #[cfg(test)]
 mod tests {
-    use super::{redacted_evidence, summary};
+    use super::{Meta, export_sarif, redacted_evidence, summary};
     use crate::models::finding::Finding;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn summary_counts_findings_and_pipeline_severity() {
@@ -199,5 +270,50 @@ mod tests {
         let mut finding = Finding::new("secrets", "Key", "detail");
         finding.evidence = "AKIA1234567890".into();
         assert_eq!(redacted_evidence(&finding), "AKIA…7890");
+    }
+
+    #[test]
+    fn redacts_unicode_evidence_without_panicking() {
+        let mut finding = Finding::new("network", "URL", "detail");
+        finding.evidence = "éééésecretéééé".into();
+        assert_eq!(redacted_evidence(&finding), "éééé…éééé");
+    }
+
+    #[test]
+    fn sarif_is_versioned_and_does_not_export_raw_evidence() {
+        let path = std::env::temp_dir().join(format!(
+            "dexprobe-sarif-test-{}-{}.sarif",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut finding = Finding::new("secrets", "Credential", "Possible credential");
+        finding.evidence = "raw-secret-value".into();
+        finding.location = "classes.dex".into();
+        let meta = Meta {
+            tool: "dexprobe".into(),
+            version: "0.1.0".into(),
+            apk_path: "app.apk".into(),
+            scan_time: "2026-01-01T00:00:00Z".into(),
+            skip_llm: true,
+            pipeline: None,
+        };
+
+        export_sarif(&[finding], &meta, &path).expect("write SARIF");
+        let bytes = std::fs::read(&path).expect("read SARIF");
+        let _ = std::fs::remove_file(path);
+        let text = String::from_utf8(bytes).expect("SARIF UTF-8");
+        let report: serde_json::Value = serde_json::from_str(&text).expect("SARIF JSON");
+        assert_eq!(report["version"], "2.1.0");
+        assert_eq!(report["runs"][0]["results"][0]["ruleId"], "secrets");
+        assert!(
+            report["runs"][0]["results"][0]["message"]["text"]
+                .as_str()
+                .unwrap()
+                .contains("Evidence:")
+        );
+        assert!(!text.contains("raw-secret-value"));
     }
 }

@@ -212,7 +212,7 @@ mod tests {
         let path = std::env::temp_dir().join(format!("dexprobe-cache-{}.json", std::process::id()));
         let key = CacheKey {
             library: "okhttp".into(),
-            package_prefix: "com.squareup.okhttp3".into(),
+            package_prefix: "okhttp3".into(),
             version: "unknown".into(),
             scanner_schema_version: 1,
             parser_version: "parser1".into(),

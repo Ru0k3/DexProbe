@@ -20,6 +20,8 @@ struct CliArgs {
     apk_file: PathBuf,
     #[arg(short, long)]
     output: Option<PathBuf>,
+    #[arg(long)]
+    sarif: bool,
     #[arg(long, value_enum)]
     mode: Option<AnalysisMode>,
     #[arg(long, value_enum)]
@@ -40,6 +42,7 @@ struct CliConfig {
     fail_policy: FailPolicy,
     max_findings: Option<usize>,
     output: Option<PathBuf>,
+    sarif: bool,
     pipeline: Option<String>,
     skip_llm: bool,
     verbose: bool,
@@ -48,6 +51,9 @@ struct CliConfig {
 fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
     let args = CliArgs::parse();
+    if args.sarif && args.output.is_none() {
+        anyhow::bail!("--sarif requires --output <path>");
+    }
     let config = CliConfig {
         mode: args
             .mode
@@ -60,6 +66,7 @@ fn main() -> anyhow::Result<()> {
             .max_findings
             .or_else(|| std::env::var("DEXPROBE_MAX_FINDINGS").ok()?.parse().ok()),
         output: args.output.clone(),
+        sarif: args.sarif,
         pipeline: args.pipeline.clone(),
         skip_llm: args.skip_llm,
         verbose: args.verbose,
@@ -98,14 +105,18 @@ fn main() -> anyhow::Result<()> {
         };
         output::report::render_terminal(&findings, &meta);
         if let Some(path) = config.output.as_deref() {
-            output::report::export_json(
-                &findings,
-                &meta,
-                path,
-                &format!("{:?}", config.fail_policy).to_lowercase(),
-                threshold.clone(),
-                exceeded,
-            )?;
+            if config.sarif {
+                output::report::export_sarif(&findings, &meta, path)?;
+            } else {
+                output::report::export_json(
+                    &findings,
+                    &meta,
+                    path,
+                    &format!("{:?}", config.fail_policy).to_lowercase(),
+                    threshold.clone(),
+                    exceeded,
+                )?;
+            }
         }
         if exceeded {
             std::process::exit(crate::config::ExitCode::Policy.code());

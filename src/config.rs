@@ -166,9 +166,9 @@ pub const SUSPICIOUS_TLDS: &[&str] = &[".tk", ".ml", ".ga", ".cf", ".gq", ".xyz"
 // ── Known Library Package Prefixes ────────────────────────────────────────────
 /// Maps an Android library package prefix to its library name.
 pub const LIBRARY_PACKAGE_MAP: phf::Map<&'static str, &'static str> = phf::phf_map! {
-    "com.squareup.okhttp3"       => "okhttp",
+    "okhttp3"                    => "okhttp",
     "com.squareup.okhttp"        => "okhttp",
-    "com.squareup.retrofit2"     => "retrofit",
+    "retrofit2"                  => "retrofit",
     "com.google.gson"            => "gson",
     "com.google.firebase"        => "firebase",
     "com.google.android.gms"     => "play-services",

@@ -446,8 +446,14 @@ fn make_temp_dir(path: &Path) -> Result<PathBuf> {
         std::process::id(),
         SCAN_COUNTER.fetch_add(1, Ordering::Relaxed)
     );
-    let base = config::temp_dir().join(scan_id);
-    fs::create_dir_all(&base)?;
+    let base = std::env::temp_dir().join(format!("dexprobe-{scan_id}"));
+    let mut builder = fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(&base)?;
     Ok(base)
 }
 
@@ -498,7 +504,7 @@ mod tests {
     use super::{ApkArchive, ArchiveLimits, ScanError, open_apk};
     use std::fs;
     use std::io::Write;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
     use zip::ZipWriter;
     use zip::write::SimpleFileOptions;
@@ -550,5 +556,22 @@ mod tests {
         fs::remove_file(path).expect("remove fixture");
         let error = result.expect_err("malformed manifest must fail");
         assert!(error.to_string().contains("manifest decode failed"));
+    }
+
+    #[test]
+    fn creates_private_unique_temp_directories() {
+        let first = super::make_temp_dir(Path::new("sample.apk")).expect("create temp dir");
+        let second = super::make_temp_dir(Path::new("sample.apk")).expect("create temp dir");
+        assert_ne!(first, second);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&first).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+        }
+        fs::remove_dir_all(first).unwrap();
+        fs::remove_dir_all(second).unwrap();
     }
 }

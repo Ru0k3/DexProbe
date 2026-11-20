@@ -15,8 +15,6 @@
 ///   Phase 9  -> enrich (LLM)
 ///   Phase 11 -> report
 ///
-/// Currently all pipelines are stubs until their implementation phase.
-///
 /// Public API
 /// ----------
 ///   run(name, unpacked) -> Vec<Finding>   (dynamic dispatch by name)

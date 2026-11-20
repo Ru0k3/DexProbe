@@ -40,7 +40,7 @@ fn scan_text(findings: &mut Vec<Finding>, location: &str, text: &str) {
         ("Bearer ", "Bearer token detected", 8.0),
     ] {
         if let Some(index) = text.find(prefix) {
-            let evidence = &text[index..text.len().min(index + 16)];
+            let evidence = text[index..].chars().take(16).collect::<String>();
             let mut finding = Finding::new(
                 PIPELINE_NAME,
                 title,
@@ -48,7 +48,7 @@ fn scan_text(findings: &mut Vec<Finding>, location: &str, text: &str) {
             );
             finding.score = score;
             finding.location = location.to_string();
-            finding.evidence = format!("{}…", &evidence[..evidence.len().min(8)]);
+            finding.evidence = format!("{}…", evidence.chars().take(8).collect::<String>());
             finding.redacted_evidence = "[REDACTED]".into();
             finding.evidence_source = location.into();
             finding.tags.push("heuristic".into());
@@ -83,5 +83,12 @@ mod tests {
         let mut findings = Vec::new();
         scan_text(&mut findings, "classes.dex", "ordinary application text");
         assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn scans_unicode_text_without_panicking() {
+        let mut findings = Vec::new();
+        scan_text(&mut findings, "classes.dex", "AKIAa🙂123456789");
+        assert_eq!(findings.len(), 1);
     }
 }

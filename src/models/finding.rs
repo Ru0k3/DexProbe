@@ -51,7 +51,7 @@ pub struct Finding {
     pub location: String,
     /// The raw value that triggered the finding
     /// (e.g. partial key, URL, class name).
-    #[serde(skip_serializing)]
+    #[serde(skip_serializing, default)]
     pub evidence: String,
     /// Free-form labels for filtering.
     pub tags: Vec<String>,
@@ -109,5 +109,22 @@ impl Finding {
             llm_attack: None,
             llm_fix: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Finding;
+
+    #[test]
+    fn serialized_findings_reload_without_raw_evidence() {
+        let mut finding = Finding::new("secrets", "Key", "detail");
+        finding.evidence = "private-value".into();
+        finding.redacted_evidence = "[REDACTED]".into();
+        let json = serde_json::to_vec(&finding).expect("serialize finding");
+        assert!(!String::from_utf8_lossy(&json).contains("private-value"));
+        let restored: Finding = serde_json::from_slice(&json).expect("deserialize finding");
+        assert!(restored.evidence.is_empty());
+        assert_eq!(restored.redacted_evidence, "[REDACTED]");
     }
 }

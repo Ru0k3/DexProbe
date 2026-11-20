@@ -21,13 +21,12 @@ pub fn run_with_mode(unpacked: &UnpackedApk, mode: crate::config::AnalysisMode) 
         let Ok(dex) = crate::core::dex::parse_file(path) else {
             continue;
         };
-        let class_names = dex
-            .class_defs
-            .iter()
-            .map(|class| class.name.trim_start_matches('L').trim_end_matches(';'))
-            .collect::<Vec<_>>();
         for (prefix, library) in crate::config::LIBRARY_PACKAGE_MAP.entries() {
-            if class_names.iter().any(|class| class.starts_with(prefix)) {
+            if dex
+                .class_defs
+                .iter()
+                .any(|class| crate::core::dex::class_matches_package_prefix(&class.name, prefix))
+            {
                 libraries.insert((*library).to_string());
                 let mut finding = Finding::new(
                     PIPELINE_NAME,
@@ -45,9 +44,7 @@ pub fn run_with_mode(unpacked: &UnpackedApk, mode: crate::config::AnalysisMode) 
             }
         }
     }
-    let online = mode == crate::config::AnalysisMode::Online
-        && (!crate::config::nvd_api_key().is_empty()
-            || std::env::var("DEXPROBE_NVD").as_deref() == Ok("1"));
+    let online = mode == crate::config::AnalysisMode::Online;
     let mut cache = load_cache();
     let now = unix_now();
     let mut cache_changed = false;
