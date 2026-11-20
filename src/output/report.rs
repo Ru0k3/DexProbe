@@ -114,6 +114,18 @@ pub fn export_json(
 }
 
 pub fn export_sarif(findings: &[Finding], meta: &Meta, output_path: &Path) -> anyhow::Result<()> {
+    let rules = findings
+        .iter()
+        .map(|finding| finding.pipeline.as_str())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .map(|id| {
+            serde_json::json!({
+                "id": id,
+                "shortDescription": { "text": format!("{id} analysis finding") }
+            })
+        })
+        .collect::<Vec<_>>();
     let results = findings
         .iter()
         .map(|finding| {
@@ -138,12 +150,13 @@ pub fn export_sarif(findings: &[Finding], meta: &Meta, output_path: &Path) -> an
                     "reachability": finding.reachability,
                     "tags": finding.tags,
                     "cve_ids": finding.cve_ids,
+                    "apk_location": apk_entry_path(&finding.location),
                 },
             });
             if !finding.location.is_empty() {
                 result["locations"] = serde_json::json!([{
                     "physicalLocation": {
-                        "artifactLocation": { "uri": finding.location }
+                        "artifactLocation": { "uri": meta.apk_path }
                     }
                 }]);
             }
@@ -154,13 +167,20 @@ pub fn export_sarif(findings: &[Finding], meta: &Meta, output_path: &Path) -> an
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
         "version": "2.1.0",
         "runs": [{
-            "tool": { "driver": { "name": meta.tool, "version": meta.version } },
+            "tool": { "driver": { "name": meta.tool, "version": meta.version, "rules": rules } },
             "results": results,
         }],
     });
     write_report(output_path, &serde_json::to_vec_pretty(&report)?)?;
     logger::ok(&format!("SARIF report -> {}", output_path.display()));
     Ok(())
+}
+
+fn apk_entry_path(location: &str) -> &str {
+    ["/resources/", "/dex/", "/manifest/"]
+        .iter()
+        .find_map(|prefix| location.rsplit_once(prefix).map(|(_, entry)| entry))
+        .unwrap_or(location)
 }
 
 fn write_report(output_path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
@@ -307,7 +327,20 @@ mod tests {
         let text = String::from_utf8(bytes).expect("SARIF UTF-8");
         let report: serde_json::Value = serde_json::from_str(&text).expect("SARIF JSON");
         assert_eq!(report["version"], "2.1.0");
+        assert_eq!(
+            report["runs"][0]["tool"]["driver"]["rules"][0]["id"],
+            "secrets"
+        );
         assert_eq!(report["runs"][0]["results"][0]["ruleId"], "secrets");
+        assert_eq!(
+            report["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]
+                ["uri"],
+            "app.apk"
+        );
+        assert_eq!(
+            report["runs"][0]["results"][0]["properties"]["apk_location"],
+            "classes.dex"
+        );
         assert!(
             report["runs"][0]["results"][0]["message"]["text"]
                 .as_str()

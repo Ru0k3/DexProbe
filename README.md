@@ -27,6 +27,10 @@ only uses existing CVE cache entries. `DEXPROBE_MODE`,
 `DEXPROBE_FAIL_ON`, and `DEXPROBE_MAX_FINDINGS` provide environment defaults;
 command-line values take precedence.
 
+NVD keyword matches are low-severity candidates because dependency versions and
+product identity are not verified. The source CVSS score is retained as an
+`nvd_cvss` tag; candidates do not trigger `--fail-on severity`.
+
 `--fail-on severity` exits with code `2` when a HIGH-or-more finding exists.
 `--fail-on findings --max-findings N` exits with code `2` when the scan produces
 more than `N` findings. Runtime and input failures exit with code `1`; success

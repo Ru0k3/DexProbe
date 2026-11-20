@@ -39,7 +39,9 @@ fn scan_text(findings: &mut Vec<Finding>, location: &str, text: &str) {
         ),
         ("Bearer ", "Bearer token detected", 8.0),
     ] {
-        if let Some(index) = text.find(prefix) {
+        if let Some(index) = text.find(prefix)
+            && (prefix != "AKIA" || valid_aws_access_key(text, index))
+        {
             let evidence = text[index..].chars().take(16).collect::<String>();
             let mut finding = Finding::new(
                 PIPELINE_NAME,
@@ -55,6 +57,19 @@ fn scan_text(findings: &mut Vec<Finding>, location: &str, text: &str) {
             findings.push(finding);
         }
     }
+}
+
+fn valid_aws_access_key(text: &str, start: usize) -> bool {
+    let bytes = text.as_bytes();
+    let Some(key) = bytes.get(start..start + 20) else {
+        return false;
+    };
+    key.starts_with(b"AKIA")
+        && key[4..]
+            .iter()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+        && (start == 0 || !bytes[start - 1].is_ascii_alphanumeric())
+        && (start + 20 == bytes.len() || !bytes[start + 20].is_ascii_alphanumeric())
 }
 
 #[cfg(test)]
@@ -88,7 +103,18 @@ mod tests {
     #[test]
     fn scans_unicode_text_without_panicking() {
         let mut findings = Vec::new();
-        scan_text(&mut findings, "classes.dex", "AKIAa🙂123456789");
+        scan_text(&mut findings, "classes.dex", "é AKIA1234567890SECRET é");
         assert_eq!(findings.len(), 1);
+    }
+
+    #[test]
+    fn ignores_aws_prefix_embedded_in_encoded_text() {
+        let mut findings = Vec::new();
+        scan_text(
+            &mut findings,
+            "resources.cvr",
+            "QWxwaGEAKIA1234567890SECRETencoded",
+        );
+        assert!(findings.is_empty());
     }
 }

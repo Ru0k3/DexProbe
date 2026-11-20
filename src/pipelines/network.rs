@@ -6,6 +6,9 @@ pub const PIPELINE_NAME: &str = "network";
 pub fn run(unpacked: &UnpackedApk) -> Vec<Finding> {
     let mut findings = Vec::new();
     for path in unpacked.res_files.iter().chain(unpacked.dex_files.iter()) {
+        if is_documentation_path(&path.to_string_lossy()) {
+            continue;
+        }
         if let Ok(bytes) = std::fs::read(path) {
             scan_text(
                 &mut findings,
@@ -15,6 +18,12 @@ pub fn run(unpacked: &UnpackedApk) -> Vec<Finding> {
         }
     }
     findings
+}
+
+fn is_documentation_path(path: &str) -> bool {
+    let path = path.to_ascii_lowercase();
+    path.split('/').any(|part| part == "licenses")
+        || path.rsplit('/').next() == Some("aboutlibraries.json")
 }
 
 fn scan_text(findings: &mut Vec<Finding>, location: &str, text: &str) {
@@ -75,7 +84,7 @@ fn network_finding(
 
 #[cfg(test)]
 mod tests {
-    use super::scan_text;
+    use super::{is_documentation_path, scan_text};
 
     #[test]
     fn classifies_http_tld_and_port() {
@@ -93,6 +102,19 @@ mod tests {
         let mut findings = Vec::new();
         scan_text(&mut findings, "classes.dex", "example.xyz:8080");
         assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn skips_bundled_license_and_about_libraries_documents() {
+        assert!(is_documentation_path(
+            "/tmp/resources/assets/files/LICENSES/Apache-2.0.txt"
+        ));
+        assert!(is_documentation_path(
+            "/tmp/resources/assets/aboutlibraries.json"
+        ));
+        assert!(!is_documentation_path(
+            "/tmp/resources/assets/api-config.json"
+        ));
     }
 
     #[test]

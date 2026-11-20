@@ -153,12 +153,33 @@ fn policy_result(
     match policy {
         FailPolicy::Never => (false, None),
         FailPolicy::Severity => {
-            let exceeded = findings.iter().any(|finding| finding.score >= 7.0);
+            let exceeded = findings.iter().any(|finding| {
+                finding.score >= 7.0 && !finding.tags.iter().any(|tag| tag == "nvd")
+            });
             (exceeded, Some("HIGH".into()))
         }
         FailPolicy::Findings => {
             let threshold = max_findings.unwrap_or(0);
             (findings.len() > threshold, Some(threshold.to_string()))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::policy_result;
+    use crate::config::FailPolicy;
+    use crate::models::finding::Finding;
+
+    #[test]
+    fn keyword_only_nvd_candidates_do_not_fail_severity_policy() {
+        let mut candidate = Finding::new("dependencies", "Potential CVE", "unverified");
+        candidate.score = 9.8;
+        candidate.tags.push("nvd".into());
+        assert!(!policy_result(&[candidate], FailPolicy::Severity, None).0);
+
+        let mut confirmed_signal = Finding::new("manifest", "Debuggable", "confirmed");
+        confirmed_signal.score = 7.0;
+        assert!(policy_result(&[confirmed_signal], FailPolicy::Severity, None).0);
     }
 }

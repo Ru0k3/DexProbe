@@ -113,26 +113,17 @@ fn save_cache(cache: &HashMap<String, CacheEntry>) {
         return;
     }
 
-    let lock_path = path.with_extension("json.lock");
-    let lock = match fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&lock_path)
-    {
-        Ok(lock) => lock,
-        Err(error) => {
-            crate::core::logger::warn(&format!("Could not lock CVE cache: {error}"));
-            return;
-        }
-    };
-    let temporary = path.with_extension(format!("json.{}.tmp", std::process::id()));
     let Ok(bytes) = serde_json::to_vec_pretty(cache) else {
         crate::core::logger::warn("Could not serialize CVE cache.");
         return;
     };
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let temporary = path.with_extension(format!("json.{}.{nonce}.tmp", std::process::id()));
+    // shortcut: concurrent scans can replace each other's cache entries; cache misses only repeat NVD lookups.
     let result = fs::write(&temporary, bytes).and_then(|_| fs::rename(&temporary, &path));
-    drop(lock);
-    let _ = fs::remove_file(lock_path);
     if let Err(error) = result {
         crate::core::logger::warn(&format!("Could not update CVE cache: {error}"));
     } else {
@@ -220,7 +211,7 @@ fn parse_nvd_findings(
                 .as_str()
                 .unwrap_or("NVD reported a vulnerability for this dependency."),
         );
-        finding.score = score.clamp(0.0, 10.0);
+        finding.score = 0.0;
         finding.location = "dependency metadata".into();
         finding.evidence = id.into();
         finding.redacted_evidence = id.into();
@@ -229,6 +220,7 @@ fn parse_nvd_findings(
         finding.reachability = crate::models::finding::Reachability::Unverified;
         finding.confidence = crate::models::finding::Confidence::Unknown;
         finding.tags.push("nvd".into());
+        finding.tags.push(format!("nvd_cvss={score:.1}"));
         finding
             .tags
             .push(format!("package_prefix={package_prefix}"));
@@ -275,7 +267,7 @@ fn extract_vulnerable_method(description: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_vulnerable_method;
+    use super::{extract_vulnerable_method, parse_nvd_findings};
 
     #[test]
     fn only_extracts_explicit_dalvik_method_signatures() {
@@ -284,5 +276,27 @@ mod tests {
             Some("Lcom/example/Client;->send".into())
         );
         assert!(extract_vulnerable_method("issue in the send method").is_none());
+    }
+
+    #[test]
+    fn keyword_candidates_keep_cvss_as_advisory_metadata() {
+        let payload = serde_json::json!({
+            "vulnerabilities": [{
+                "cve": {
+                    "id": "CVE-2099-1234",
+                    "metrics": {"cvssMetricV31": [{"cvssData": {"baseScore": 9.8}}]},
+                    "descriptions": [{"value": "Candidate description"}]
+                }
+            }]
+        });
+        let finding = parse_nvd_findings("okhttp", "okhttp3", &payload)
+            .unwrap()
+            .remove(0);
+        assert_eq!(finding.score, 0.0);
+        assert!(finding.tags.iter().any(|tag| tag == "nvd_cvss=9.8"));
+        assert_eq!(
+            finding.confidence,
+            crate::models::finding::Confidence::Unknown
+        );
     }
 }
