@@ -59,6 +59,7 @@ fn scans_generated_apk_and_keeps_sarif_locations_durable() {
             b"http://license.example.test".as_slice(),
         ),
         ("assets/api.json", b"http://api.example.test".as_slice()),
+        ("assets/credentials.txt", b"AKIA1234567890SECRET".as_slice()),
     ] {
         zip.start_file(name, SimpleFileOptions::default())
             .expect("start APK entry");
@@ -67,7 +68,15 @@ fn scans_generated_apk_and_keeps_sarif_locations_durable() {
     zip.finish().expect("finish APK fixture");
 
     let output = Command::new(env!("CARGO_BIN_EXE_dexprobe"))
-        .args(["--mode", "offline", "--skip-llm", "--sarif", "--output"])
+        .args([
+            "--mode",
+            "offline",
+            "--skip-llm",
+            "--fail-on",
+            "severity",
+            "--sarif",
+            "--output",
+        ])
         .arg(&report_path)
         .arg(&apk_path)
         .output()
@@ -79,10 +88,12 @@ fn scans_generated_apk_and_keeps_sarif_locations_durable() {
     let _ = fs::remove_file(&apk_path);
     let _ = fs::remove_file(&report_path);
     assert!(
-        output.status.success(),
-        "DexProbe failed: {}",
-        String::from_utf8_lossy(&output.stderr)
+        output.status.code() == Some(2),
+        "expected policy exit code 2; stdout: {}; stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
     );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Temp directory deleted."));
     let results = report["runs"][0]["results"]
         .as_array()
         .expect("SARIF results");

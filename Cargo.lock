@@ -517,6 +517,7 @@ dependencies = [
  "colored",
  "dex-parser-rust",
  "dotenvy",
+ "libc",
  "phf",
  "reqwest",
  "serde",

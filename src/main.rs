@@ -83,7 +83,7 @@ fn main() -> anyhow::Result<()> {
         .as_deref()
         .map(|name| vec![name])
         .unwrap_or_else(|| core::runner::ALL_PIPELINES.to_vec());
-    let result = (|| -> anyhow::Result<()> {
+    let result = (|| -> anyhow::Result<bool> {
         let grouped = core::runner::run_pipelines(&unpacked, &selected, config.mode);
         let mut findings = core::scorer::score_findings(core::aggregator::aggregate(&grouped));
         let (exceeded, threshold) =
@@ -118,13 +118,14 @@ fn main() -> anyhow::Result<()> {
                 )?;
             }
         }
-        if exceeded {
-            std::process::exit(crate::config::ExitCode::Policy.code());
-        }
-        Ok(())
+        Ok(exceeded)
     })();
     core::cleanup(&mut unpacked);
-    result
+    match result {
+        Ok(true) => std::process::exit(crate::config::ExitCode::Policy.code()),
+        Ok(false) => Ok(()),
+        Err(error) => Err(error),
+    }
 }
 
 fn env_mode() -> Option<AnalysisMode> {

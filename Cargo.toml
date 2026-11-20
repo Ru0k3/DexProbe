@@ -30,6 +30,7 @@ colored     = "2"
 # Error handling
 anyhow      = "1"
 thiserror   = "2"
+libc        = "0.2"
 phf         = { version = "0.11", features = ["macros"] }
 chrono      = { version = "0.4", default-features = false, features = ["clock"] }
 reqwest     = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }

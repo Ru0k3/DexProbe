@@ -39,9 +39,14 @@ fn scan_text(findings: &mut Vec<Finding>, location: &str, text: &str) {
         ),
         ("Bearer ", "Bearer token detected", 8.0),
     ] {
-        if let Some(index) = text.find(prefix)
-            && (prefix != "AKIA" || valid_aws_access_key(text, index))
-        {
+        let matched_index = if prefix == "AKIA" {
+            text.match_indices(prefix)
+                .map(|(index, _)| index)
+                .find(|index| valid_aws_access_key(text, *index))
+        } else {
+            text.find(prefix)
+        };
+        if let Some(index) = matched_index {
             let evidence = text[index..].chars().take(16).collect::<String>();
             let mut finding = Finding::new(
                 PIPELINE_NAME,
@@ -116,5 +121,16 @@ mod tests {
             "QWxwaGEAKIA1234567890SECRETencoded",
         );
         assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn finds_valid_aws_key_after_invalid_prefix() {
+        let mut findings = Vec::new();
+        scan_text(
+            &mut findings,
+            "resources.cvr",
+            "AKIAinvalid! then AKIA1234567890SECRET",
+        );
+        assert_eq!(findings.len(), 1);
     }
 }
